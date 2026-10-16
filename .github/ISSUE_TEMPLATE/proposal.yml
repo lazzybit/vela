@@ -1,0 +1,17 @@
+name: Proposal
+description: Propose a change
+labels: ["proposal"]
+body:
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+    validations:
+      required: true
+
+  - type: textarea
+    id: reason
+    attributes:
+      label: Reason
+    validations:
+      required: true

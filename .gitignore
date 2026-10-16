@@ -1,0 +1,9 @@
+node_modules
+.output
+.vinxi
+dist
+.env
+*.local
+test-results
+playwright-report
+.playwright-mcp
