@@ -71,10 +71,11 @@ check never is.
 
 ## Container image
 
-Version tags publish a `linux/amd64` image to GitHub Container Registry:
+Every push publishes a `linux/amd64` image to GitHub Container Registry, tagged
+`:latest`:
 
 ```sh
-podman pull ghcr.io/lazzybit/vela:0.1.0
+podman pull ghcr.io/lazzybit/vela:latest
 ```
 
 The image is the production build from `npm run build` on Node.js 24 (the
@@ -94,7 +95,7 @@ podman run --rm --init --ipc=host \
   -p 127.0.0.1:3000:3000 \
   -e VELA_TEAM_DOMAIN=https://<team>.cloudflareaccess.com \
   -e VELA_POLICY_AUD=<application-aud> \
-  ghcr.io/lazzybit/vela:0.1.0
+  ghcr.io/lazzybit/vela:latest
 ```
 
 `--init` reaps Chromium's helper processes and `--ipc=host` gives Chromium the

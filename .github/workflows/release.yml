@@ -1,19 +1,11 @@
 # Release
 #
 # Builds the Vela container image from the project's Containerfile and pushes it
-# to GitHub Container Registry when a version tag is pushed, for example:
-#
-#   git tag v0.2.0 && git push origin v0.2.0
-#
-# The image is built for linux/amd64 and tagged with the version and the commit
-# (`ghcr.io/<owner>/<repo>:<version>` and `:sha-<short>`).
+# to GitHub Container Registry on every push, tagged `:latest`.
 
 name: Release
 
-on:
-  push:
-    tags:
-      - "v*"
+on: push
 
 permissions:
   contents: read
@@ -39,22 +31,12 @@ jobs:
             sudo apt-get install -y --no-install-recommends podman
           fi
 
-      - name: Build the image
+      - name: Build and publish
         run: |
           set -euo pipefail
           sudo podman build --platform linux/amd64 \
             --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
             --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
-            --label "org.opencontainers.image.version=${GITHUB_REF_NAME#v}" \
-            -f Containerfile -t vela:release .
-
-      - name: Publish the image
-        run: |
-          set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          short="${GITHUB_SHA:0:7}"
-          sudo podman tag vela:release "${IMAGE}:${version}"
-          sudo podman tag vela:release "${IMAGE}:sha-${short}"
+            -f Containerfile -t "${IMAGE}:latest" .
           echo "${{ secrets.GITHUB_TOKEN }}" | sudo podman login ghcr.io -u "${{ github.actor }}" --password-stdin
-          sudo podman push "${IMAGE}:${version}"
-          sudo podman push "${IMAGE}:sha-${short}"
+          sudo podman push "${IMAGE}:latest"
