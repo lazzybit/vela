@@ -9,6 +9,9 @@
 # comment must be written by the owner. Text after `@pia` is forwarded to the
 # agent as extra instructions. Pull request comments are ignored.
 #
+# The session export is uploaded as two unzipped artifacts, `session.jsonl` and
+# `session.html`, kept for 90 days; the result comment links to them.
+#
 # All provider configuration comes from environment variables through the
 # `.pi/extensions/ci` extension, auto-loaded from the project extension
 # directory. The whole plugin only takes effect when `CI` is set:
@@ -68,6 +71,9 @@ jobs:
     env:
       PI_MODEL: openai/gpt-6.1-sol
       PI_THINKING: xhigh
+    outputs:
+      session_jsonl_url: ${{ steps.upload-session-jsonl.outputs.artifact-url }}
+      session_html_url: ${{ steps.upload-session-html.outputs.artifact-url }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -75,7 +81,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          # `lts/*` resolves to the latest LTS release at run time.
+          node-version: 'lts/*'
 
       - name: Install pi
         run: npm install --global @earendil-works/pi-coding-agent@1.3.0
@@ -248,14 +255,27 @@ jobs:
           pi --no-extensions --export "$out_dir/session.jsonl" "$out_dir/session.html" \
             || echo "Session export failed (non-fatal)"
 
-      - name: Upload session artifact
+      - name: Upload session.jsonl
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        id: upload-session-jsonl
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: pi-analysis-session
-          path: ${{ runner.temp }}/pi-out
+          # `archive: false` uploads the file unzipped; the artifact is named
+          # after the file itself.
+          path: ${{ runner.temp }}/pi-out/session.jsonl
+          archive: false
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 90
+
+      - name: Upload session.html
+        if: always()
+        id: upload-session-html
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ runner.temp }}/pi-out/session.html
+          archive: false
+          if-no-files-found: warn
+          retention-days: 90
 
   publish:
     needs: analyze
@@ -265,17 +285,19 @@ jobs:
       contents: read
       issues: write
     steps:
-      - name: Download session artifact
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - name: Download session.jsonl
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         continue-on-error: true
         with:
-          name: pi-analysis-session
+          name: session.jsonl
           path: pi-out
 
       - name: Post result comment
         env:
           ANALYZE_RESULT: ${{ needs.analyze.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SESSION_JSONL_URL: ${{ needs.analyze.outputs.session_jsonl_url }}
+          SESSION_HTML_URL: ${{ needs.analyze.outputs.session_html_url }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
@@ -327,12 +349,20 @@ jobs:
 
             const result = process.env.ANALYZE_RESULT;
             const maxLength = 55000;
+            const artifactLinks = [
+              ['session.jsonl', process.env.SESSION_JSONL_URL],
+              ['session.html', process.env.SESSION_HTML_URL],
+            ]
+              .filter(([, url]) => url)
+              .map(([label, url]) => `- [${label}](${url})`);
+            const artifactSection = artifactLinks.length ? ['', ...artifactLinks] : [];
             let body;
             if (result === 'success' && summary) {
               const truncated =
                 summary.length > maxLength ? `${summary.slice(0, maxLength)}\n\n_[truncated]_` : summary;
               body = [
                 'Pi issue analysis finished.',
+                ...artifactSection,
                 '',
                 '<details>',
                 '<summary>Agent analysis</summary>',
@@ -344,6 +374,7 @@ jobs:
             } else {
               body = [
                 `Pi issue analysis did not complete (analyze job: ${result}).`,
+                ...artifactSection,
                 '',
                 `Run: ${process.env.RUN_URL}`,
               ].join('\n');
