@@ -69,6 +69,50 @@ check never is.
    origin is never reachable directly. Access adds the `Cf-Access-Jwt-Assertion`
    header that Vela verifies.
 
+## Container image
+
+Version tags publish a `linux/amd64` image to GitHub Container Registry:
+
+```sh
+podman pull ghcr.io/lazzybit/vela:0.1.0
+```
+
+The image is the production build from `npm run build` on Node.js 24 (the
+current LTS) over Debian 13, run as the non-root `node` user, with the
+Playwright version Vela locks and its Chromium already installed. Configuration
+is injected as environment variables, exactly as for a source install. Sessions
+and the default live in process memory, so the container keeps no state and a
+restart starts empty; there is nothing to mount.
+
+The image runs as a non-root user, so Chromium keeps its sandbox and needs to
+create user namespaces. Podman's default seccomp profile already allows the
+syscalls that requires, so no extra profile is needed. Pass `--init` and
+`--ipc=host`, which are Playwright's container recommendations:
+
+```sh
+podman run --rm --init --ipc=host \
+  -p 127.0.0.1:3000:3000 \
+  -e VELA_TEAM_DOMAIN=https://<team>.cloudflareaccess.com \
+  -e VELA_POLICY_AUD=<application-aud> \
+  ghcr.io/lazzybit/vela:0.1.0
+```
+
+`--init` reaps Chromium's helper processes and `--ipc=host` gives Chromium the
+shared memory it needs. The image binds `HOST=0.0.0.0` and `PORT=3000`. Do not
+expose the port beyond the host: reach it through a Cloudflare Tunnel, because
+Access is the only authentication. Under Docker, whose default seccomp profile
+blocks user-namespace creation, add Playwright's `seccomp_profile.json` with
+`--security-opt`.
+
+Build the image locally with:
+
+```sh
+podman build -f Containerfile -t vela .
+```
+
+Podman also reads the repository's `.dockerignore` as its ignore file, so the
+build context stays small.
+
 ## Using the MCP surface
 
 The MCP surface is Playwright MCP itself: the same tools, schemas, snapshots and
