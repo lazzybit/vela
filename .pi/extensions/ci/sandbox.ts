@@ -12,12 +12,16 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import type {
   BashOperations,
+  EditOperations,
   ExtensionAPI,
   ReadOperations,
+  WriteOperations,
 } from "@earendil-works/pi-coding-agent";
 import {
   createBashTool,
+  createEditTool,
   createReadTool,
+  createWriteTool,
   detectSupportedImageMimeTypeFromFile,
 } from "@earendil-works/pi-coding-agent";
 
@@ -32,6 +36,9 @@ const commonBwrapArgs: string[] = [
   "--setenv", "LANG", "C.UTF-8",
   "--setenv", "LC_ALL", "C.UTF-8",
   "--setenv", "TERM", "dumb",
+  // `--clearenv` drops `CI`, but this sandbox only registers in CI, and `/is`
+  // branches on it to tell that it must not label or assign the issue.
+  "--setenv", "CI", "true",
   // Read-only system tree. Not `--ro-bind / /`, which would keep exposing the
   // agent dir and session files inside the sandbox.
   "--ro-bind", "/usr", "/usr",
@@ -49,7 +56,7 @@ const ignoreData = (): void => {};
 function runSandbox(
   command: string[],
   onData: (data: Buffer) => void,
-  { workspace, cwd }: { workspace: string; cwd: string },
+  { workspace, cwd, input }: { workspace: string; cwd: string; input?: Buffer },
 ): Promise<{ exitCode: number | null; output: Buffer }> {
   return new Promise((resolve, reject) => {
     const child = spawn(
@@ -62,8 +69,13 @@ function runSandbox(
         "--chdir", cwd,
         "--", ...command,
       ],
-      { stdio: ["ignore", "pipe", "pipe"] },
+      { stdio: [input ? "pipe" : "ignore", "pipe", "pipe"] },
     );
+
+    if (input && child.stdin) {
+      child.stdin.on("error", ignoreData);
+      child.stdin.end(input);
+    }
 
     const output: Buffer[] = [];
     child.stdout.on("data", (data: Buffer) => {
@@ -102,6 +114,38 @@ export function registerSandbox(pi: ExtensionAPI): void {
     detectImageMimeType: detectSupportedImageMimeTypeFromFile,
   };
 
+  const writeFile = async (path: string, content: string): Promise<void> => {
+    const { exitCode } = await runSandbox(["/usr/bin/bash", "-c", 'cat > "$1"', "--", path], ignoreData, {
+      ...options,
+      input: Buffer.from(content),
+    });
+    if (exitCode !== 0) throw new Error(`write failed inside sandbox: ${path}`);
+  };
+
+  const mkdir = async (dir: string): Promise<void> => {
+    const { exitCode } = await runSandbox(["/usr/bin/mkdir", "-p", "--", dir], ignoreData, options);
+    if (exitCode !== 0) throw new Error(`mkdir failed inside sandbox: ${dir}`);
+  };
+
+  const editOperations: EditOperations = {
+    readFile: readOperations.readFile,
+    // An edit rewrites the file, so it must be writable inside the sandbox.
+    access: async (path) => {
+      const { exitCode } = await runSandbox(
+        ["/usr/bin/bash", "-c", 'test -r "$1" && test -w "$1"', "--", path],
+        ignoreData,
+        options,
+      );
+      if (exitCode !== 0) throw new Error(`not readable and writable inside sandbox: ${path}`);
+    },
+    writeFile,
+  };
+
+  const writeOperations: WriteOperations = {
+    writeFile,
+    mkdir,
+  };
+
   pi.registerTool({
     ...createBashTool(workspace, {
       operations: bashOperations,
@@ -111,6 +155,14 @@ export function registerSandbox(pi: ExtensionAPI): void {
 
   pi.registerTool({
     ...createReadTool(workspace, { operations: readOperations }),
+  });
+
+  pi.registerTool({
+    ...createEditTool(workspace, { operations: editOperations }),
+  });
+
+  pi.registerTool({
+    ...createWriteTool(workspace, { operations: writeOperations }),
   });
 
   // `!` commands typed by the user follow the same boundary.

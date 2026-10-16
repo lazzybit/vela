@@ -15,9 +15,9 @@
 #   - OPENAI_BASE_URL points the `openai` provider at an OpenAI-compatible
 #     gateway.
 #   - OPENAI_API_KEY is read by the provider itself.
-# The same extension runs the model's `read` and `bash` tools inside a
-# bubblewrap sandbox, so generated commands cannot read the provider or GitHub
-# credentials from the Pi process environment. The `Setup sandbox` step
+# The same extension runs the model's file and shell tools (`read`, `bash`,
+# `edit`, `write`) inside a bubblewrap sandbox, so generated commands cannot
+# read the provider or GitHub credentials from the Pi process environment. The `Setup sandbox` step
 # installs bubblewrap, ripgrep, and the AppArmor profile that lets unprivileged
 # bubblewrap create user namespaces on Ubuntu 24.04.
 # The GitHub MCP server used by /is is written into the agent directory by the
@@ -221,7 +221,7 @@ jobs:
           fi
 
           set +e
-          pi -p --approve --tools read,bash \
+          pi -p --approve \
             --session-dir "$out_dir/session" \
             --model "$PI_MODEL" \
             --thinking "$PI_THINKING" \
