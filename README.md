@@ -14,9 +14,8 @@ Cloudflare Access, and a session registry, and nothing else.
 ## Requirements
 
 - Node.js 24 or newer.
-- A host that can run Chromium through Playwright (Linux is the normal choice).
-  Playwright launches Chromium itself and drives it over a pipe; nothing listens
-  on a socket.
+- Chromium installed on `PATH` (Linux is the normal choice). Playwright launches
+  it and drives it over a pipe; nothing listens on a socket.
 - A Cloudflare Zero Trust team with an Access application in front of Vela.
 
 ## Install and run
@@ -34,9 +33,8 @@ npm run build
 npm start              # node .output/server/index.mjs
 ```
 
-`PORT` and `HOST` are read by the Node server. Chromium is downloaded by the
-`playwright` package on install; use `npx playwright install chromium` if it was
-installed with browser downloads skipped.
+`PORT` and `HOST` are read by the Node server. Vela launches `chromium` from
+`PATH`; install it from your distribution.
 
 ## Configuration
 
@@ -80,20 +78,21 @@ podman pull ghcr.io/lazzybit/vela:latest
 ```
 
 The image is the production build from `npm run build` on Node.js 24 over
-Debian 13, run as the non-root `node` user, with the Playwright version Vela
-locks and its Chromium already installed. Configuration is injected as
-environment variables, exactly as for a source install. Sessions and the
-default live in process memory, so the container keeps no state and a restart
-starts empty; there is nothing to mount.
+Debian 13, run as the non-root `node` user, with Debian's Chromium installed.
+Configuration is injected as environment variables, exactly as for a source
+install. Sessions and the default live in process memory, so the container
+keeps no state and a restart starts empty; there is nothing to mount.
 
-The image runs as a non-root user, so Chromium keeps its sandbox and needs to
-create user namespaces. Podman's default seccomp profile already allows the
-syscalls that requires, so no extra profile is needed. Under Docker, whose
-default seccomp profile blocks user-namespace creation, add Playwright's
-`seccomp_profile.json` with `--security-opt`.
+Debian's `chromium-sandbox` package installs a root-owned, setuid
+`chrome-sandbox` helper, so Chromium keeps its sandbox even where the host
+denies unprivileged user namespaces. The image installs that package, and Vela
+launches the Chromium on `PATH`.
 
-[`examples/vela.container`](examples/vela.container) is a rootful Podman Quadlet
-unit for the published image:
+[`examples/vela.container`](examples/vela.container) is a system Podman
+Quadlet unit for the published image. `UserNS=auto` allocates a user namespace
+from the `containers` range in `/etc/subuid` and `/etc/subgid`, and the
+namespaced `SYS_ADMIN` capability lets the setuid sandbox helper create
+Chromium's PID and network namespaces:
 
 ```sh
 sudo cp examples/vela.container /etc/containers/systemd/
@@ -102,9 +101,10 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now vela.service
 ```
 
-The unit publishes no host port: run the Cloudflare Tunnel on the same Podman
-network and point it at `http://vela:8000`, so the port is never bound to the
-host and Access stays the only way in.
+`UserNS=auto` only needs the `containers` subuid/subgid range, not a new user
+account. The unit publishes no host port: run the Cloudflare Tunnel on the same
+Podman network and point it at `http://vela:8000`, so the port is never bound to
+the host and Access stays the only way in.
 
 Build the image locally with:
 
@@ -177,5 +177,4 @@ rejection.
 exercise the panel document (driven in a browser with JavaScript disabled), its
 server-function forms, the MCP handshake, session binding verified by real
 navigation, and a real Chromium driven through the MCP tools; and once in
-production mode to confirm requests without an Access assertion are refused. It
-needs `npm run build` first and a Playwright Chromium install.
+production mode to confirm requests without an Access assertion are refused.

@@ -8,6 +8,9 @@ ContainerName=vela
 Environment=CLOUDFLARE_ACCESS_TEAM_DOMAIN=example.cloudflareaccess.com
 Environment=CLOUDFLARE_ACCESS_APPLICATION_AUD=<application-aud>
 
+UserNS=auto
+AddCapability=SYS_ADMIN
+
 RunInit=true
 ShmSize=1g
 

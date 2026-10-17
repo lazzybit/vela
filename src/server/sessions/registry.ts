@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { accessSync, constants } from "node:fs";
+import { delimiter, join } from "node:path";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { onShutdown } from "../lifecycle";
 
@@ -48,6 +50,25 @@ export class SessionClosedError extends Error {
 export type BrowserFactory = () => Promise<Browser>;
 
 /**
+ * Locate the Chromium installed by the operating system. Its package can ship
+ * the setuid sandbox helper that Playwright's downloaded browser lacks, so the
+ * browser keeps its sandbox where user namespaces are unavailable.
+ */
+function findSystemChromium(): string {
+  for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+    if (!directory) continue;
+    const candidate = join(directory, "chromium");
+    try {
+      accessSync(candidate, constants.X_OK);
+      return candidate;
+    } catch {
+      // Not here; try the next directory.
+    }
+  }
+  throw new Error("vela: chromium was not found on PATH.");
+}
+
+/**
  * Chromium runs as a child process that Playwright drives over pipes. It never
  * opens a debugging port, and Vela never exposes one.
  *
@@ -59,7 +80,11 @@ async function launchChromium(): Promise<Browser> {
   // example a unit test with an injected factory) never loads Playwright.
   const { chromium } = await import("playwright");
   const runningAsRoot = typeof process.getuid === "function" && process.getuid() === 0;
-  return chromium.launch({ headless: true, chromiumSandbox: !runningAsRoot });
+  return chromium.launch({
+    headless: true,
+    chromiumSandbox: !runningAsRoot,
+    executablePath: findSystemChromium(),
+  });
 }
 
 export interface SessionRegistry {
