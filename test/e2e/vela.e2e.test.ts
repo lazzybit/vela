@@ -77,17 +77,22 @@ function startVela(port: number, environment: string, extra: NodeJS.ProcessEnv):
   return child;
 }
 
-/** The panel updates its own document: nothing here reloads after a submission. */
-async function openPanel(): Promise<void> {
-  await panelPage.goto(`${developmentBase()}/`);
-  await panelPage.waitForSelector("#open-session button[type=submit]");
+/** The panel's pages are documents: only opening and closing change the URL. */
+async function openPanel(page: Page = panelPage): Promise<void> {
+  await page.goto(`${developmentBase()}/`);
+  await page.waitForSelector("#open-session button[type=submit]");
 }
 
-async function mainText(): Promise<string> {
-  return (await panelPage.textContent("main")) ?? "";
+async function goToSession(id: string, page: Page = panelPage): Promise<void> {
+  await page.goto(`${developmentBase()}/sessions/${id}`);
+  await page.locator("#close-session button[type=submit]").waitFor();
 }
 
-/** The one outcome line: the latest submission's notice or error. */
+async function mainText(page: Page = panelPage): Promise<string> {
+  return (await page.textContent("main")) ?? "";
+}
+
+/** The one outcome line on the page: the latest submission's notice or error. */
 async function panelOutcome(page: Page = panelPage): Promise<string> {
   for (const selector of [".notice", ".error"]) {
     const locator = page.locator(selector);
@@ -114,37 +119,37 @@ async function waitForOutcome(page: Page, pattern: RegExp, previous: string): Pr
   return text;
 }
 
-function sessionId(message: string): string {
-  const match = /[0-9a-f]{10}/.exec(message);
-  if (!match) throw new Error(`no session id in: ${message}`);
-  return match[0];
+function sessionIdFromUrl(url: string): string {
+  const match = /\/sessions\/([0-9a-f]{10})$/.exec(new URL(url).pathname);
+  if (!match) throw new Error(`no session id in: ${url}`);
+  return match[1]!;
 }
 
+/** Opening from the home page lands on the new session's own page. */
 async function openSessionThroughPanel(name: string, page: Page = panelPage): Promise<string> {
-  const previous = await panelOutcome(page);
   await page.fill("#session-name", name);
   await page.click("#open-session button[type=submit]");
-  const message = await waitForOutcome(page, /^Opened session [0-9a-f]{10}\.$/, previous);
-  const id = sessionId(message);
-  await page.locator(`#default-${id}`).waitFor();
-  await expect
-    .poll(() => page.locator("#open-session button[type=submit]").isEnabled().catch(() => false))
-    .toBe(true);
+  await page.waitForURL(/\/sessions\/[0-9a-f]{10}$/);
+  const id = sessionIdFromUrl(page.url());
+  await page.locator("#close-session button[type=submit]").waitFor();
   return id;
 }
 
-async function setDefaultThroughPanel(id: string): Promise<string> {
-  const previous = await panelOutcome();
-  await panelPage.click(`#default-${id} button[type=submit]`);
-  return await waitForOutcome(panelPage, new RegExp(`^Session ${id} is now the default\\.`), previous);
+/** The session page is the only place with these forms, so it supplies the id. */
+async function setDefaultThroughPanel(page: Page = panelPage): Promise<string> {
+  const id = sessionIdFromUrl(page.url());
+  const previous = await panelOutcome(page);
+  await page.click("#set-default button[type=submit]");
+  const message = await waitForOutcome(page, new RegExp(`^Session ${id} is now the default\\.`), previous);
+  await expect.poll(() => page.locator("#set-default button[type=submit]").isDisabled()).toBe(true);
+  return message;
 }
 
-async function closeThroughPanel(id: string): Promise<string> {
-  const previous = await panelOutcome();
-  await panelPage.click(`#close-${id} button[type=submit]`);
-  const message = await waitForOutcome(panelPage, new RegExp(`^Closed session ${id}`), previous);
-  await panelPage.locator(`#close-${id}`).waitFor({ state: "detached" });
-  return message;
+async function closeThroughPanel(page: Page = panelPage): Promise<string> {
+  const previous = await panelOutcome(page);
+  await page.click("#close-session button[type=submit]");
+  await page.waitForURL(/\/\?(?:notice|error)=/);
+  return await waitForOutcome(page, /./, previous);
 }
 
 function section(heading: string): Locator {
@@ -250,52 +255,53 @@ describe("Vela end to end", () => {
     expect(response.status).toBe(403);
   });
 
-  it("opens a session in the panel without navigating", async () => {
+  it("opens a session onto its own page", async () => {
     await openPanel();
-    const navigations = trackNavigations();
-    try {
-      sessionA = await openSessionThroughPanel("alpha");
-    } finally {
-      navigations.stop();
-    }
-    expect(navigations.urls).toEqual([]);
-    expect(panelPage.url()).toBe(`${developmentBase()}/`);
+    sessionA = await openSessionThroughPanel("alpha");
 
-    expect(await mainText()).toContain(`/mcp/${sessionA}`);
-    expect(await panelPage.locator(".notice").count()).toBe(1);
+    expect(panelPage.url()).toBe(`${developmentBase()}/sessions/${sessionA}`);
+    const text = await mainText();
+    expect(text).toContain("alpha");
+    expect(text).toContain(sessionA);
+    expect(text).toContain(`/mcp/${sessionA}`);
+    expect(text).toContain("Opened");
+    expect(await panelPage.locator(".notice").count()).toBe(0);
     expect(await panelPage.locator(".error").count()).toBe(0);
   });
 
-  it("sets the default in the panel without navigating", async () => {
+  it("sets the default on the session's page without navigating", async () => {
     const navigations = trackNavigations();
     try {
-      const message = await setDefaultThroughPanel(sessionA);
+      const message = await setDefaultThroughPanel();
       expect(message).toContain("existing connections keep their browser");
     } finally {
       navigations.stop();
     }
     expect(navigations.urls).toEqual([]);
-    expect(panelPage.url()).toBe(`${developmentBase()}/`);
-
-    const text = (await section("Default session").textContent()) ?? "";
-    expect(text).toContain(sessionA);
-    expect(text).toContain("new connections to");
+    expect(panelPage.url()).toBe(`${developmentBase()}/sessions/${sessionA}`);
+    expect(await mainText()).toContain(`${sessionA} — default`);
   });
 
   it("keeps the hydrated document working for later submissions", async () => {
+    await panelPage.getByRole("link", { name: "All sessions" }).click();
+    await panelPage.waitForSelector("#open-session button[type=submit]");
+    expect((await section("Default session").textContent()) ?? "").toContain(sessionA);
+
     await panelPage.reload();
-    await panelPage.locator(`#default-${sessionA}`).waitFor();
+    await panelPage.waitForSelector("#open-session button[type=submit]");
     expect((await section("Default session").textContent()) ?? "").toContain(sessionA);
 
     sessionB = await openSessionThroughPanel("bravo");
-    expect(await panelPage.locator(".notice").count()).toBe(1);
-    const notice = (await panelPage.locator(".notice").textContent()) ?? "";
-    expect(notice).toContain(sessionB);
-    expect(notice).not.toContain(sessionA);
+    expect(panelPage.url()).toBe(`${developmentBase()}/sessions/${sessionB}`);
+    expect(await panelPage.locator(".error").count()).toBe(0);
 
+    await panelPage.getByRole("link", { name: "All sessions" }).click();
+    await panelPage.waitForSelector("#open-session button[type=submit]");
     const sessions = (await section("Sessions").textContent()) ?? "";
     expect(sessions).toContain(sessionA);
     expect(sessions).toContain(sessionB);
+    expect(sessions).toContain("default");
+    expect(await panelPage.locator("section li form").count()).toBe(0);
   });
 
   it("exposes Playwright MCP tools and no session management", async () => {
@@ -335,6 +341,12 @@ describe("Vela end to end", () => {
     await client.close();
   });
 
+  it("lists a session's pages on its page", async () => {
+    await goToSession(sessionA);
+    const pages = (await section("Pages").textContent()) ?? "";
+    expect(pages).toContain(fixtureUrl("/"));
+  });
+
   it("binds each MCP session to its own browser", async () => {
     const boundToB = await connectMcp(`/mcp/${sessionB}`);
     await textOf(boundToB.client, "browser_navigate", { url: fixtureUrl("/b") });
@@ -349,7 +361,8 @@ describe("Vela end to end", () => {
   });
 
   it("routes /mcp to the default without moving bound connections", async () => {
-    await setDefaultThroughPanel(sessionB);
+    await goToSession(sessionB);
+    await setDefaultThroughPanel();
 
     const onDefault = await connectMcp("/mcp");
     expect(await tabUrls(onDefault.client)).toContain(fixtureUrl("/b"));
@@ -397,20 +410,23 @@ describe("Vela end to end", () => {
   });
 
   it("clears the default when the default session is closed", async () => {
-    // A second tab keeps a form for a session this one is about to close.
+    // A second tab keeps a session page for a session this one is about to close.
     const stalePage = await panel.newPage();
-    await stalePage.goto(`${developmentBase()}/`);
-    await stalePage.locator(`#close-${sessionB}`).waitFor();
+    await goToSession(sessionB, stalePage);
 
-    const message = await closeThroughPanel(sessionB);
+    // The panel page is still on session B's page from the previous test.
+    const message = await closeThroughPanel();
     expect(message).toMatch(/default is now clear/);
 
-    expect((await section("Default session").textContent()) ?? "").toContain("No default session is set");
+    await expect
+      .poll(async () => (await section("Default session").textContent()) ?? "")
+      .toContain("No default session is set");
     await expect(connectMcp("/mcp")).rejects.toThrow(/No default session/);
 
-    // The stale form fails, says why, and does not block the next submission.
+    // The stale page's action fails, says why, and sends the tab home.
     const previous = await panelOutcome(stalePage);
-    await stalePage.click(`#close-${sessionB} button[type=submit]`);
+    await stalePage.click("#close-session button[type=submit]");
+    await stalePage.waitForURL(/\/\?error=/);
     const error = await waitForOutcome(
       stalePage,
       new RegExp(`^Session "${sessionB}" is closed\\.$`),
@@ -418,25 +434,40 @@ describe("Vela end to end", () => {
     );
     expect(error).toContain(sessionB);
     expect(await stalePage.locator(".notice").count()).toBe(0);
-    expect(await stalePage.locator(`#close-${sessionB} button[type=submit]`).isEnabled()).toBe(true);
 
     const opened = await openSessionThroughPanel("charlie", stalePage);
-    expect(await stalePage.locator(".error").count()).toBe(0);
-    expect(await stalePage.locator(".notice").count()).toBe(1);
     expect(opened).not.toBe(sessionB);
+    expect(stalePage.url()).toBe(`${developmentBase()}/sessions/${opened}`);
+    expect(await stalePage.locator(".error").count()).toBe(0);
     await stalePage.close();
   });
 
   it("reports a session closed from the panel and refuses it afterwards", async () => {
     const { client } = await connectMcp(`/mcp/${sessionA}`);
-    const message = await closeThroughPanel(sessionA);
+    await goToSession(sessionA);
+    const message = await closeThroughPanel();
     expect(message).toMatch(new RegExp(`^Closed session ${sessionA}\\.$`));
-    expect(await mainText()).not.toContain(`/mcp/${sessionA}`);
+    await expect
+      .poll(async () => (await section("Sessions").textContent()) ?? "")
+      .toContain("charlie");
+    await expect.poll(() => panelPage.locator(`a[href="/sessions/${sessionA}"]`).count()).toBe(0);
 
     const afterClose = await call(client, "browser_snapshot");
     expect(afterClose.isError).toBe(true);
     await client.close();
 
     await expect(connectMcp(`/mcp/${sessionA}`)).rejects.toThrow(/Unknown session/);
+  });
+
+  it("sends an unknown session id home with an error", async () => {
+    await panelPage.goto(`${developmentBase()}/sessions/0000000000`);
+    await panelPage.waitForURL(/\/\?error=/);
+    await expect.poll(() => panelOutcome()).toContain('Unknown session "0000000000"');
+  });
+
+  it("sends a closed session id home with an error", async () => {
+    await panelPage.goto(`${developmentBase()}/sessions/${sessionA}`);
+    await panelPage.waitForURL(/\/\?error=/);
+    await expect.poll(() => panelOutcome()).toContain(`Session "${sessionA}" is closed.`);
   });
 });

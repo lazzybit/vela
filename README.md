@@ -3,8 +3,9 @@
 Vela is a remote browser for one person and their agents. It is Playwright,
 Cloudflare Access, and a session registry, and nothing else.
 
-- The **panel** at `/` is a plain, one-column document for opening, listing,
-  closing and selecting browser sessions.
+- The **panel** at `/` opens and lists browser sessions. Each session has its
+  own page at `/sessions/{id}`, where its pages, its MCP endpoint, and the
+  close and set-default actions live.
 - The **MCP surface** at `/mcp` and `/mcp/{session-id}` lets agents drive a
   browser with the same management core the panel uses.
 - **Cloudflare Access** is the only authentication. Every request is verified
@@ -136,11 +137,15 @@ clients do not carry a token of their own. If your client runs outside Access an
 you want to test it, it must supply the same `Cf-Access-Jwt-Assertion` header
 Access would.
 
-Sessions themselves are managed from the panel, not over MCP: opening, listing,
-closing and choosing the default all happen at `/`.
+Sessions themselves are managed from the panel, not over MCP: opening and
+listing happen at `/`, and closing a session or choosing the default happens on
+that session's page at `/sessions/{id}`.
 
 ## Behaviour worth knowing
 
+- Opening a session takes you to its page; closing one returns to the list. An
+  unknown or closed session id sends you back to `/` with the registry's
+  explanation.
 - A browser session owns a `BrowserContext` and outlives the MCP transport that
   created it. Dropping a connection never closes a browser.
 - Closing the default session clears the default and says so. Existing
@@ -174,7 +179,8 @@ rejection.
 
 `npm run test:e2e` starts the built server twice: once with
 `ENVIRONMENT=development` to exercise the panel in a browser, its
-server-function actions and the outcome each one reports, the MCP handshake,
-session binding verified by real navigation, and a real Chromium driven through
-the MCP tools; and once in production mode to confirm requests without an Access
-assertion are refused.
+server-function actions and the outcome each one reports, the session page and
+its redirects (opening a session, closing one, and an unknown or closed id), the
+MCP handshake, session binding verified by real navigation, and a real Chromium
+driven through the MCP tools; and once in production mode to confirm requests
+without an Access assertion are refused.
