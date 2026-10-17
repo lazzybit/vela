@@ -15,8 +15,8 @@ Cloudflare Access, and a session registry, and nothing else.
 
 - Node.js 24 or newer.
 - A host that can run Chromium through Playwright (Linux is the normal choice).
-  Playwright is a library here: Chromium runs in-process and never listens on a
-  socket.
+  Playwright launches Chromium itself and drives it over a pipe; nothing listens
+  on a socket.
 - A Cloudflare Zero Trust team with an Access application in front of Vela.
 
 ## Install and run
@@ -78,32 +78,32 @@ Every push publishes a `linux/amd64` image to GitHub Container Registry, tagged
 podman pull ghcr.io/lazzybit/vela:latest
 ```
 
-The image is the production build from `npm run build` on Node.js 24 (the
-current LTS) over Debian 13, run as the non-root `node` user, with the
-Playwright version Vela locks and its Chromium already installed. Configuration
-is injected as environment variables, exactly as for a source install. Sessions
-and the default live in process memory, so the container keeps no state and a
-restart starts empty; there is nothing to mount.
+The image is the production build from `npm run build` on Node.js 24 over
+Debian 13, run as the non-root `node` user, with the Playwright version Vela
+locks and its Chromium already installed. Configuration is injected as
+environment variables, exactly as for a source install. Sessions and the
+default live in process memory, so the container keeps no state and a restart
+starts empty; there is nothing to mount.
 
 The image runs as a non-root user, so Chromium keeps its sandbox and needs to
 create user namespaces. Podman's default seccomp profile already allows the
-syscalls that requires, so no extra profile is needed. Pass `--init` and
-`--ipc=host`, which are Playwright's container recommendations:
+syscalls that requires, so no extra profile is needed. Under Docker, whose
+default seccomp profile blocks user-namespace creation, add Playwright's
+`seccomp_profile.json` with `--security-opt`.
+
+[`examples/vela.container`](examples/vela.container) is a rootful Podman Quadlet
+unit for the published image:
 
 ```sh
-podman run --rm --init --ipc=host \
-  -p 127.0.0.1:3000:3000 \
-  -e CLOUDFLARE_ACCESS_TEAM_DOMAIN=example.cloudflareaccess.com \
-  -e CLOUDFLARE_ACCESS_APPLICATION_AUD=<application-aud> \
-  ghcr.io/lazzybit/vela:latest
+sudo cp examples/vela.container /etc/containers/systemd/
+sudo $EDITOR /etc/containers/systemd/vela.container   # both Access values
+sudo systemctl daemon-reload
+sudo systemctl enable --now vela.service
 ```
 
-`--init` reaps Chromium's helper processes and `--ipc=host` gives Chromium the
-shared memory it needs. The image binds `HOST=0.0.0.0` and `PORT=3000`. Do not
-expose the port beyond the host: reach it through a Cloudflare Tunnel, because
-Access is the only authentication. Under Docker, whose default seccomp profile
-blocks user-namespace creation, add Playwright's `seccomp_profile.json` with
-`--security-opt`.
+The unit publishes no host port: run the Cloudflare Tunnel on the same Podman
+network and point it at `http://vela:3000`, so the port is never bound to the
+host and Access stays the only way in.
 
 Build the image locally with:
 
@@ -113,9 +113,6 @@ podman build -f Containerfile -t vela .
 
 Podman also reads the repository's `.dockerignore` as its ignore file, so the
 build context stays small.
-
-[`examples/vela.container`](examples/vela.container) runs the published image as
-a rootful Podman Quadlet unit.
 
 ## Using the MCP surface
 

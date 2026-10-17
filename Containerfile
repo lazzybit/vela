@@ -1,8 +1,8 @@
 # Vela's container image: the production build from `npm run build`, Chromium
 # installed with the Playwright version the lockfile pins, and nothing else.
 #
-# Chromium is driven in-process over pipes and never listens on a socket, so the
-# image exposes only the application port.
+# Chromium is a child process that Playwright drives over a pipe and never
+# listens on a socket, so the image exposes only the application port.
 
 FROM node:24-trixie-slim AS build
 
