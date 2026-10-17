@@ -71,8 +71,9 @@ JWKS fetch is cached; the check never is.
 
 ## Container image
 
-Every push publishes a `linux/amd64` image to GitHub Container Registry, tagged
-`:latest`:
+Every push runs the typecheck, the unit tests, the production build and the
+end-to-end tests. Only a passing run publishes a `linux/amd64` image to GitHub
+Container Registry, tagged `:latest`:
 
 ```sh
 podman pull ghcr.io/lazzybit/vela:latest

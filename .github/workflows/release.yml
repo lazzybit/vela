@@ -1,7 +1,8 @@
 # Release
 #
-# Builds the Vela container image from the project's Containerfile and pushes it
-# to GitHub Container Registry on every push, tagged `:latest`.
+# Runs the test workflow, then builds the Vela container image from the
+# project's Containerfile and pushes it to GitHub Container Registry on every
+# push, tagged `:latest`. Nothing is published unless the tests pass.
 
 name: Release
 
@@ -11,7 +12,11 @@ permissions:
   contents: read
 
 jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
   publish:
+    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

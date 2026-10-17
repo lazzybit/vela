@@ -1,0 +1,53 @@
+# Test
+#
+# The project's full verification: typecheck, unit tests, production build and
+# the end-to-end suite. It is a reusable workflow so that Release can run it on
+# every push and publish nothing until it passes.
+
+name: Test
+
+on: workflow_call
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Ubuntu 24.04's AppArmor policy denies unprivileged user namespaces,
+      # which Chromium needs for its sandbox. Vela runs as a non-root user and
+      # keeps the sandbox on, so lift the restriction for this test VM.
+      - name: Allow Chromium's sandbox
+        run: |
+          set -euo pipefail
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      - name: Build
+        run: npm run build
+
+      - name: End-to-end tests
+        run: npm run test:e2e
