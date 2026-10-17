@@ -100,12 +100,12 @@ async function panelOutcome(page: Page = panelPage): Promise<string> {
  * Waits for the outcome line to change to a message matching `pattern`, so a
  * previous submission's message is never mistaken for this one's.
  */
-async function waitForOutcome(pattern: RegExp, previous: string): Promise<string> {
+async function waitForOutcome(page: Page, pattern: RegExp, previous: string): Promise<string> {
   let text = "";
   await expect
     .poll(
       async () => {
-        text = await panelOutcome();
+        text = await panelOutcome(page);
         return text === previous ? "" : text;
       },
       { timeout: 20_000 },
@@ -124,7 +124,7 @@ async function openSessionThroughPanel(name: string, page: Page = panelPage): Pr
   const previous = await panelOutcome(page);
   await page.fill("#session-name", name);
   await page.click("#open-session button[type=submit]");
-  const message = await waitForOutcome(/^Opened session [0-9a-f]{10}\.$/, previous);
+  const message = await waitForOutcome(page, /^Opened session [0-9a-f]{10}\.$/, previous);
   const id = sessionId(message);
   await page.locator(`#default-${id}`).waitFor();
   await expect
@@ -136,13 +136,13 @@ async function openSessionThroughPanel(name: string, page: Page = panelPage): Pr
 async function setDefaultThroughPanel(id: string): Promise<string> {
   const previous = await panelOutcome();
   await panelPage.click(`#default-${id} button[type=submit]`);
-  return await waitForOutcome(new RegExp(`^Session ${id} is now the default\\.`), previous);
+  return await waitForOutcome(panelPage, new RegExp(`^Session ${id} is now the default\\.`), previous);
 }
 
 async function closeThroughPanel(id: string): Promise<string> {
   const previous = await panelOutcome();
   await panelPage.click(`#close-${id} button[type=submit]`);
-  const message = await waitForOutcome(new RegExp(`^Closed session ${id}`), previous);
+  const message = await waitForOutcome(panelPage, new RegExp(`^Closed session ${id}`), previous);
   await panelPage.locator(`#close-${id}`).waitFor({ state: "detached" });
   return message;
 }
@@ -411,7 +411,11 @@ describe("Vela end to end", () => {
     // The stale form fails, says why, and does not block the next submission.
     const previous = await panelOutcome(stalePage);
     await stalePage.click(`#close-${sessionB} button[type=submit]`);
-    const error = await waitForOutcome(new RegExp(`^Session "${sessionB}" is closed\\.$`), previous);
+    const error = await waitForOutcome(
+      stalePage,
+      new RegExp(`^Session "${sessionB}" is closed\\.$`),
+      previous,
+    );
     expect(error).toContain(sessionB);
     expect(await stalePage.locator(".notice").count()).toBe(0);
     expect(await stalePage.locator(`#close-${sessionB} button[type=submit]`).isEnabled()).toBe(true);
