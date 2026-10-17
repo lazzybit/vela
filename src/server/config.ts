@@ -5,7 +5,7 @@
  * malformed, every request is refused. Vela has no second identity mechanism.
  */
 export interface AccessConfig {
-  /** Access team origin, derived from the team domain `team.cloudflareaccess.com`. */
+  /** Access team origin, derived from the team domain `example.cloudflareaccess.com`. */
   readonly teamDomain: string;
   /** Application Audience (AUD) tag of the Vela Access application. */
   readonly policyAud: string;
@@ -30,7 +30,7 @@ export class ConfigError extends Error {
 }
 
 /**
- * The variable holds the bare team domain, `<team>.cloudflareaccess.com`, and
+ * The variable holds the bare team domain, `example.cloudflareaccess.com`, and
  * nothing else; the https origin used for the issuer is derived from it.
  */
 function readTeamDomain(raw: string | undefined): string | null {
@@ -51,7 +51,7 @@ export function loadAccessConfig(env: NodeJS.ProcessEnv = process.env): AccessCo
   const problems: string[] = [];
   const teamDomain = readTeamDomain(env.CLOUDFLARE_ACCESS_TEAM_DOMAIN);
   if (!teamDomain) {
-    problems.push("CLOUDFLARE_ACCESS_TEAM_DOMAIN must be the team domain such as <team>.cloudflareaccess.com");
+    problems.push("CLOUDFLARE_ACCESS_TEAM_DOMAIN must be the team domain such as example.cloudflareaccess.com");
   }
   const policyAud = env.CLOUDFLARE_ACCESS_APPLICATION_AUD?.trim();
   if (!policyAud) {

@@ -45,17 +45,17 @@ Everything else — including a missing, empty or misspelled value — is
 production, which refuses to serve any request until both Access values are set.
 There is no second token and no allowlist.
 
-| Variable                           | Meaning                                                              |
-| ---------------------------------- | -------------------------------------------------------------------- |
-| `ENVIRONMENT`                      | `production` (default) or `development`.                              |
-| `CLOUDFLARE_ACCESS_TEAM_DOMAIN`    | Your team domain only, e.g. `team.cloudflareaccess.com`.             |
-| `CLOUDFLARE_ACCESS_APPLICATION_AUD` | The Access application's **Application Audience (AUD) tag**.        |
-| `PORT` / `HOST`                    | Optional bind address for the Node server.                           |
+| Variable                            | Meaning                                                      |
+| ----------------------------------- | ------------------------------------------------------------ |
+| `ENVIRONMENT`                       | `production` (default) or `development`.                     |
+| `CLOUDFLARE_ACCESS_TEAM_DOMAIN`     | Your team domain only, e.g. `example.cloudflareaccess.com`.  |
+| `CLOUDFLARE_ACCESS_APPLICATION_AUD` | The Access application's **Application Audience (AUD) tag**. |
+| `PORT` / `HOST`                     | Optional bind address for the Node server.                   |
 
 In production, verification checks the signature against the team JWKS
-(`<team-domain>/cdn-cgi/access/certs`), the issuer, the audience, the expiry and
-the `RS256` algorithm on every single request. The JWKS fetch is cached; the
-check never is.
+(`https://example.cloudflareaccess.com/cdn-cgi/access/certs`), the issuer, the
+audience, the expiry and the `RS256` algorithm on every single request. The
+JWKS fetch is cached; the check never is.
 
 ## Cloudflare Access
 
@@ -93,7 +93,7 @@ syscalls that requires, so no extra profile is needed. Pass `--init` and
 ```sh
 podman run --rm --init --ipc=host \
   -p 127.0.0.1:3000:3000 \
-  -e CLOUDFLARE_ACCESS_TEAM_DOMAIN=<team>.cloudflareaccess.com \
+  -e CLOUDFLARE_ACCESS_TEAM_DOMAIN=example.cloudflareaccess.com \
   -e CLOUDFLARE_ACCESS_APPLICATION_AUD=<application-aud> \
   ghcr.io/lazzybit/vela:latest
 ```
@@ -113,6 +113,9 @@ podman build -f Containerfile -t vela .
 
 Podman also reads the repository's `.dockerignore` as its ignore file, so the
 build context stays small.
+
+[`examples/vela.container`](examples/vela.container) runs the published image as
+a rootful Podman Quadlet unit.
 
 ## Using the MCP surface
 

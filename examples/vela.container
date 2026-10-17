@@ -1,0 +1,17 @@
+[Unit]
+Description=Vela remote browser
+
+[Container]
+Image=ghcr.io/lazzybit/vela:latest
+ContainerName=vela
+
+Environment=CLOUDFLARE_ACCESS_TEAM_DOMAIN=example.cloudflareaccess.com
+Environment=CLOUDFLARE_ACCESS_APPLICATION_AUD=<application-aud>
+
+RunInit=true
+ShmSize=1g
+
+AutoUpdate=registry
+
+[Install]
+WantedBy=multi-user.target

@@ -9,7 +9,7 @@ import {
 import { accessJwksUrl, ConfigError, loadAccessConfig, readEnvironment, type AccessConfig } from "../src/server/config";
 
 const config: AccessConfig = {
-  teamDomain: "https://team.cloudflareaccess.com",
+  teamDomain: "https://example.cloudflareaccess.com",
   policyAud: "vela-aud-tag",
 };
 
@@ -90,7 +90,7 @@ describe("verifyAccessAssertion", () => {
 });
 
 describe("authenticateRequest", () => {
-  const env = { CLOUDFLARE_ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com", CLOUDFLARE_ACCESS_APPLICATION_AUD: config.policyAud };
+  const env = { CLOUDFLARE_ACCESS_TEAM_DOMAIN: "example.cloudflareaccess.com", CLOUDFLARE_ACCESS_APPLICATION_AUD: config.policyAud };
 
   it("refuses a request without the Access header", async () => {
     await expect(authenticateRequest(new Request("https://vela.example/mcp"), env)).rejects.toMatchObject({
@@ -138,7 +138,7 @@ describe("loadAccessConfig", () => {
   it("rejects a value that is not a bare team domain", () => {
     expect(() =>
       loadAccessConfig({
-        CLOUDFLARE_ACCESS_TEAM_DOMAIN: "https://team.cloudflareaccess.com",
+        CLOUDFLARE_ACCESS_TEAM_DOMAIN: "https://example.cloudflareaccess.com",
         CLOUDFLARE_ACCESS_APPLICATION_AUD: "aud",
       }),
     ).toThrow(ConfigError);
@@ -147,13 +147,13 @@ describe("loadAccessConfig", () => {
   it("derives the team origin from the bare team domain", () => {
     expect(
       loadAccessConfig({
-        CLOUDFLARE_ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com",
+        CLOUDFLARE_ACCESS_TEAM_DOMAIN: "example.cloudflareaccess.com",
         CLOUDFLARE_ACCESS_APPLICATION_AUD: "aud",
       }),
-    ).toEqual({ teamDomain: "https://team.cloudflareaccess.com", policyAud: "aud" });
+    ).toEqual({ teamDomain: "https://example.cloudflareaccess.com", policyAud: "aud" });
   });
 
   it("derives the JWKS endpoint from the team domain", () => {
-    expect(accessJwksUrl(config).href).toBe("https://team.cloudflareaccess.com/cdn-cgi/access/certs");
+    expect(accessJwksUrl(config).href).toBe("https://example.cloudflareaccess.com/cdn-cgi/access/certs");
   });
 });
