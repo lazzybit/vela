@@ -1,5 +1,12 @@
 import type { Browser, BrowserContext, Page } from "playwright";
 
+export interface FakeScreencastFrame {
+  data: Buffer;
+  timestamp: number;
+  viewportWidth: number;
+  viewportHeight: number;
+}
+
 /**
  * A browser-shaped stand-in for tests that need the session registry but must
  * not start Chromium. Only the Playwright surface Vela actually uses is
@@ -7,12 +14,37 @@ import type { Browser, BrowserContext, Page } from "playwright";
  */
 export class FakePage {
   readonly calls: string[] = [];
+  visibilityState: "visible" | "hidden" = "visible";
+  failScreencastStart = false;
+  screencastStarts = 0;
+  screencastStops = 0;
   private currentUrl = "about:blank";
   private currentTitle = "";
   private closed = false;
+  private screencastRunning = false;
+  private onScreencastFrame: ((frame: FakeScreencastFrame) => unknown) | undefined;
+  private readonly listeners = new Map<string, Set<() => void>>();
   readonly keyboard = {
     press: async (key: string): Promise<void> => {
       this.calls.push(`press:${key}`);
+    },
+  };
+
+  readonly screencast = {
+    start: async (options: { onFrame?: (frame: FakeScreencastFrame) => unknown } = {}) => {
+      if (this.failScreencastStart || this.screencastRunning) {
+        throw new Error("Screencast is already started");
+      }
+      this.screencastRunning = true;
+      this.screencastStarts += 1;
+      this.onScreencastFrame = options.onFrame;
+      return { dispose: async () => this.screencast.stop() };
+    },
+    stop: async (): Promise<void> => {
+      if (!this.screencastRunning) return;
+      this.screencastRunning = false;
+      this.screencastStops += 1;
+      this.onScreencastFrame = undefined;
     },
   };
 
@@ -26,6 +58,38 @@ export class FakePage {
 
   isClosed(): boolean {
     return this.closed;
+  }
+
+  async evaluate(): Promise<boolean> {
+    return this.visibilityState === "visible" && !this.closed;
+  }
+
+  on(event: string, listener: () => void): this {
+    let listeners = this.listeners.get(event);
+    if (!listeners) {
+      listeners = new Set();
+      this.listeners.set(event, listeners);
+    }
+    listeners.add(listener);
+    return this;
+  }
+
+  off(event: string, listener: () => void): this {
+    this.listeners.get(event)?.delete(listener);
+    return this;
+  }
+
+  get screencastIsRunning(): boolean {
+    return this.screencastRunning;
+  }
+
+  emitFrame(text: string): void {
+    void this.onScreencastFrame?.({
+      data: Buffer.from(text),
+      timestamp: Date.now(),
+      viewportWidth: 8,
+      viewportHeight: 6,
+    });
   }
 
   async goto(url: string): Promise<null> {
@@ -55,13 +119,16 @@ export class FakePage {
   }
 
   closeSync(): void {
+    if (this.closed) return;
     this.closed = true;
+    for (const listener of [...(this.listeners.get("close") ?? [])]) listener();
   }
 }
 
 export class FakeContext {
   readonly created: FakePage[] = [];
   closed = false;
+  private readonly listeners = new Map<string, Set<() => void>>();
 
   async newPage(): Promise<Page> {
     const page = new FakePage();
@@ -73,9 +140,25 @@ export class FakeContext {
     return this.created.filter(page => !page.isClosed()) as unknown as Page[];
   }
 
+  on(event: string, listener: () => void): this {
+    let listeners = this.listeners.get(event);
+    if (!listeners) {
+      listeners = new Set();
+      this.listeners.set(event, listeners);
+    }
+    listeners.add(listener);
+    return this;
+  }
+
+  off(event: string, listener: () => void): this {
+    this.listeners.get(event)?.delete(listener);
+    return this;
+  }
+
   async close(): Promise<void> {
     this.closed = true;
     for (const page of this.created) page.closeSync();
+    for (const listener of [...(this.listeners.get("close") ?? [])]) listener();
   }
 }
 

@@ -4,8 +4,8 @@ Vela is a remote browser for one person and their agents. It is Playwright,
 Cloudflare Access, and a session registry, and nothing else.
 
 - The **panel** at `/` opens and lists browser sessions. Each session has its
-  own page at `/sessions/{id}`, where its pages, its MCP endpoint, and the
-  close and set-default actions live.
+  own page at `/sessions/{id}`, where its pages, its live view, its MCP
+  endpoint, and the close and set-default actions live.
 - The **MCP surface** at `/mcp` and `/mcp/{session-id}` lets agents drive a
   browser with the same management core the panel uses.
 - **Cloudflare Access** is the only authentication. Every request is verified
@@ -156,6 +156,13 @@ that session's page at `/sessions/{id}`.
   with an explicit error.
 - State-changing requests from a browser must be same-origin. Non-browser MCP
   clients are unaffected.
+- A live view is on demand. Start it on a session's page; Vela captures the page
+  Chromium reports as visible (a background tab reports itself hidden), delivers
+  it at the chosen frame rate, and stops the screencast when the last viewer
+  disconnects or the page or session closes. Viewers share one capture.
+- A page can run one screencast. If an MCP client is recording video from the
+  active page, the live view reports that it is unavailable rather than taking
+  over the recording.
 - `SIGINT`/`SIGTERM` close MCP transports and the browser.
 
 ## Commands
@@ -174,13 +181,14 @@ npm run test:e2e   # end-to-end tests; needs a build and a Chromium install
 `npm test` covers assertion verification (valid, wrong audience/issuer/key,
 expired, algorithm confusion, missing configuration), that only an explicit
 `ENVIRONMENT=development` skips verification, the session registry
-(open/list/close/set-default, clearing the default, ids) and cross-origin
-rejection.
+(open/list/close/set-default, clearing the default, ids), cross-origin
+rejection, and the live view (visible-page selection with fallback, shared
+capture, per-viewer frame rate, and teardown).
 
 `npm run test:e2e` starts the built server twice: once with
 `ENVIRONMENT=development` to exercise the panel in a browser, its
 server-function actions and the outcome each one reports, the session page and
 its redirects (opening a session, closing one, and an unknown or closed id), the
-MCP handshake, session binding verified by real navigation, and a real Chromium
-driven through the MCP tools; and once in production mode to confirm requests
-without an Access assertion are refused.
+live view stream, the MCP handshake, session binding verified by real navigation,
+and a real Chromium driven through the MCP tools; and once in production mode to
+confirm requests without an Access assertion are refused.

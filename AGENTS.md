@@ -1,6 +1,7 @@
 # Working rules
 
 - Use the framework's and upstream libraries' official APIs; never rebuild tools, routes, or protocols that already exist.
+- Prefer server functions over a hand-built client/server split; add an API route only for a protocol or transport a server function cannot carry.
 - Respect existing responsibility and interface boundaries; add no entry points, capabilities, or abstractions unasked.
 - The user's latest explicit instruction outranks existing documents; update code and docs together, and do not re-ask once authorized.
 - Prefer static imports; a dynamic import needs a real lazy-loading reason, never a workaround for behavior you have not understood.

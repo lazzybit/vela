@@ -18,6 +18,11 @@ const fixtureHtml = `<!doctype html>
     <h1 id="heading">Hello fixture</h1>
     <button id="counter" onclick="document.getElementById('heading').textContent = 'Clicked'">Click me</button>
     <input id="name" />
+    <div id="motion"></div>
+    <style>
+      #motion { width: 24px; height: 24px; margin-top: 1rem; background: #333; animation: motion 1s infinite alternate; }
+      @keyframes motion { to { transform: translateX(80px); background: #e33; } }
+    </style>
   </body>
 </html>`;
 
@@ -345,6 +350,36 @@ describe("Vela end to end", () => {
     await goToSession(sessionA);
     const pages = (await section("Pages").textContent()) ?? "";
     expect(pages).toContain(fixtureUrl("/"));
+  });
+
+  it("streams a live view of the session's active page", async () => {
+    await goToSession(sessionA);
+    const frame = panelPage.locator("#live-frame");
+
+    await panelPage.click("#live-toggle");
+    await frame.waitFor();
+    await expect
+      .poll(async () => (await frame.getAttribute("src")) ?? "")
+      .toMatch(/^data:image\/jpeg;base64,/);
+    await expect
+      .poll(() =>
+        frame.evaluate(
+          image => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0,
+        ),
+      )
+      .toBe(true);
+
+    // Changing the rate replaces the stream without stopping the view. The
+    // fixture animates, so a later frame proves the new stream is delivering.
+    await panelPage.selectOption("#live-fps", "1");
+    await panelPage.waitForTimeout(2500);
+    const settled = await frame.getAttribute("src");
+    await expect
+      .poll(async () => (await frame.getAttribute("src")) ?? "", { timeout: 10_000 })
+      .not.toBe(settled);
+
+    await panelPage.click("#live-toggle");
+    await expect.poll(() => panelPage.locator("#live-frame").count()).toBe(0);
   });
 
   it("binds each MCP session to its own browser", async () => {

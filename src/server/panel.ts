@@ -2,6 +2,7 @@
 import { getRequestEvent } from "solid-js/web";
 import type { Identity } from "./access";
 import { getSession, listSessions, type SessionInfo } from "./sessions/core";
+import { liveSession, type LiveMessage } from "./sessions/live";
 import { SessionClosedError, UnknownSessionError } from "./sessions/registry";
 
 export interface PanelState {
@@ -38,4 +39,14 @@ export async function getSessionPanelState(id: string): Promise<SessionPanelStat
     }
     throw error;
   }
+}
+
+/**
+ * The live view is a server function whose result is a stream. The client
+ * consumes typed messages; aborting the call's request removes the viewer and
+ * stops the capture when the last viewer leaves.
+ */
+export async function liveView(id: string, fps: number): Promise<ReadableStream<LiveMessage>> {
+  const event = getRequestEvent();
+  return liveSession(id, fps, event?.request.signal);
 }
