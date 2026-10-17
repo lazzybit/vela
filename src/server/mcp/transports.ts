@@ -2,7 +2,12 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import {
+  isInitializeRequest,
+  isJSONRPCResultResponse,
+  type JSONRPCMessage,
+  type RequestId,
+} from "@modelcontextprotocol/sdk/types.js";
 import { onShutdown } from "../lifecycle";
 import { defaultSessionId, sessionExists } from "../sessions/core";
 import { createVelaMcpServer, type McpBinding } from "./server";
@@ -61,6 +66,44 @@ function isInitializeBody(body: unknown): boolean {
   return isInitializeRequest(body);
 }
 
+/** Tools that stay callable but are never advertised. */
+const HIDDEN_TOOLS = new Set(["browser_close"]);
+
+function toolName(tool: unknown): string | null {
+  if (typeof tool !== "object" || tool === null || !("name" in tool)) return null;
+  const name = (tool as { name: unknown }).name;
+  return typeof name === "string" ? name : null;
+}
+
+/**
+ * `browser_close` cannot succeed under `sharedBrowserContext`, so it is hidden
+ * from discovery only: the call path and its upstream guard stay untouched. A
+ * `tools/list` result is the only result that carries a `tools` array, and the
+ * dynamic tools a page registers arrive in that same list.
+ */
+function hideUnadvertisedTools(message: JSONRPCMessage): JSONRPCMessage {
+  if (!isJSONRPCResultResponse(message)) return message;
+  const tools = message.result.tools;
+  if (!Array.isArray(tools)) return message;
+  return {
+    ...message,
+    result: {
+      ...message.result,
+      tools: tools.filter(tool => {
+        const name = toolName(tool);
+        return name === null || !HIDDEN_TOOLS.has(name);
+      }),
+    },
+  };
+}
+
+/** Filters discovery results before the transport serializes them. */
+class VelaTransport extends WebStandardStreamableHTTPServerTransport {
+  override async send(message: JSONRPCMessage, options?: { relatedRequestId?: RequestId }): Promise<void> {
+    await super.send(hideUnadvertisedTools(message), options);
+  }
+}
+
 /**
  * Serve one MCP HTTP request.
  *
@@ -99,7 +142,7 @@ export async function handleMcpRequest(request: Request, pathSessionId: string |
   if (binding instanceof Response) return binding;
 
   const server = await createVelaMcpServer(binding);
-  const transport = new WebStandardStreamableHTTPServerTransport({
+  const transport = new VelaTransport({
     sessionIdGenerator: () => randomUUID(),
     onsessioninitialized: mcpSessionId => {
       transports.set(mcpSessionId, { transport, server, binding });

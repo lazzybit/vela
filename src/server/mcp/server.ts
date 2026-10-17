@@ -22,7 +22,8 @@ export interface McpBinding {
  *
  * `sharedBrowserContext` tells Playwright MCP the context belongs to someone
  * else: `browser_close` refuses to close it, and transport cleanup leaves it
- * alone.
+ * alone. Because that tool can never succeed here, the transport also hides it
+ * from discovery; the tool and its guard stay as Playwright MCP defines them.
  */
 export async function createVelaMcpServer(binding: McpBinding): Promise<Server> {
   return createConnection({ sharedBrowserContext: true }, async () => registry().get(binding.sessionId).context);

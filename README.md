@@ -118,7 +118,11 @@ build context stays small.
 ## Using the MCP surface
 
 The MCP surface is Playwright MCP itself: the same tools, schemas, snapshots and
-interactions. Vela decides only which browser they may use.
+interactions, with one exception. `browser_close` is not advertised, because the
+context belongs to the session and closing a session is the panel's job. A
+client that calls the name anyway is refused by Playwright MCP.
+
+Vela decides only which browser the tools may use.
 
 MCP clients point at:
 
@@ -135,9 +139,6 @@ Access would.
 Sessions themselves are managed from the panel, not over MCP: opening, listing,
 closing and choosing the default all happen at `/`. The panel's forms are server
 functions and work without JavaScript.
-
-`browser_close` refuses to close Vela's context, because the context belongs to
-the session, not to the connection.
 
 ## Behaviour worth knowing
 

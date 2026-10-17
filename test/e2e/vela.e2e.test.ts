@@ -291,12 +291,14 @@ describe("Vela end to end", () => {
     await client.close();
   });
 
-  it("refuses browser_close because the context belongs to Vela", async () => {
-    const { client } = await connectMcp(`/mcp/${sessionA}`);
-    const result = await call(client, "browser_close");
-    expect(result.isError).toBe(true);
-    expect(result.content?.map(block => block.text).join("\n")).toMatch(/shared/);
-    await client.close();
+  it("hides browser_close from discovery on both endpoints", async () => {
+    for (const path of ["/mcp", `/mcp/${sessionA}`]) {
+      const { client } = await connectMcp(path);
+      const tools = (await client.listTools()).tools.map(tool => tool.name);
+      expect(tools).not.toContain("browser_close");
+      expect(tools).toContain("browser_navigate");
+      await client.close();
+    }
   });
 
   it("keeps the browser state after the MCP connection drops", async () => {
