@@ -24,7 +24,7 @@ Cloudflare Access, and a session registry, and nothing else.
 ```sh
 npm install
 cp .env.example .env   # then fill it in
-ENVIRONMENT=development npm run dev   # http://localhost:3000
+ENVIRONMENT=development npm run dev   # http://localhost:8000
 ```
 
 Production:
@@ -102,7 +102,7 @@ sudo systemctl enable --now vela.service
 ```
 
 The unit publishes no host port: run the Cloudflare Tunnel on the same Podman
-network and point it at `http://vela:3000`, so the port is never bound to the
+network and point it at `http://vela:8000`, so the port is never bound to the
 host and Access stays the only way in.
 
 Build the image locally with:

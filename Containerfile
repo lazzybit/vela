@@ -23,7 +23,7 @@ FROM node:24-trixie-slim AS runtime
 ENV NODE_ENV=production \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     HOST=0.0.0.0 \
-    PORT=3000
+    PORT=8000
 
 WORKDIR /app
 
@@ -43,6 +43,6 @@ RUN chown -R node:node /app
 # allow Chromium to create user namespaces; see the README.
 USER node
 
-EXPOSE 3000
+EXPOSE 8000
 
 CMD ["node", ".output/server/index.mjs"]
