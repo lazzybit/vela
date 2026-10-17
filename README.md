@@ -137,8 +137,7 @@ you want to test it, it must supply the same `Cf-Access-Jwt-Assertion` header
 Access would.
 
 Sessions themselves are managed from the panel, not over MCP: opening, listing,
-closing and choosing the default all happen at `/`. The panel's forms are server
-functions and work without JavaScript.
+closing and choosing the default all happen at `/`.
 
 ## Behaviour worth knowing
 
@@ -174,8 +173,8 @@ expired, algorithm confusion, missing configuration), that only an explicit
 rejection.
 
 `npm run test:e2e` starts the built server twice: once with
-`ENVIRONMENT=development` to
-exercise the panel document (driven in a browser with JavaScript disabled), its
-server-function forms, the MCP handshake, session binding verified by real
-navigation, and a real Chromium driven through the MCP tools; and once in
-production mode to confirm requests without an Access assertion are refused.
+`ENVIRONMENT=development` to exercise the panel in a browser, its
+server-function actions and the outcome each one reports, the MCP handshake,
+session binding verified by real navigation, and a real Chromium driven through
+the MCP tools; and once in production mode to confirm requests without an Access
+assertion are refused.
