@@ -7,7 +7,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { chromium, type Browser, type Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-const TEAM_DOMAIN = "https://vela-e2e.cloudflareaccess.com";
+const TEAM_DOMAIN = "vela-e2e.cloudflareaccess.com";
 const POLICY_AUD = "vela-e2e-aud";
 const PROJECT_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -158,8 +158,8 @@ beforeAll(async () => {
   // A second process in production mode, to prove the boundary still exists.
   productionPort = await freePort();
   productionServer = startVela(productionPort, "production", {
-    VELA_TEAM_DOMAIN: TEAM_DOMAIN,
-    VELA_POLICY_AUD: POLICY_AUD,
+    CLOUDFLARE_ACCESS_TEAM_DOMAIN: TEAM_DOMAIN,
+    CLOUDFLARE_ACCESS_APPLICATION_AUD: POLICY_AUD,
   });
   await waitForServer(`${productionBase()}/`);
 

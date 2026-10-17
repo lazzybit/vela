@@ -45,12 +45,12 @@ Everything else — including a missing, empty or misspelled value — is
 production, which refuses to serve any request until both Access values are set.
 There is no second token and no allowlist.
 
-| Variable            | Meaning                                                              |
-| ------------------- | -------------------------------------------------------------------- |
-| `ENVIRONMENT`       | `production` (default) or `development`.                             |
-| `VELA_TEAM_DOMAIN`  | Your team domain, e.g. `https://team.cloudflareaccess.com`.          |
-| `VELA_POLICY_AUD`   | The Access application's **Application Audience (AUD) tag**.          |
-| `PORT` / `HOST`     | Optional bind address for the Node server.                           |
+| Variable                           | Meaning                                                              |
+| ---------------------------------- | -------------------------------------------------------------------- |
+| `ENVIRONMENT`                      | `production` (default) or `development`.                              |
+| `CLOUDFLARE_ACCESS_TEAM_DOMAIN`    | Your team domain only, e.g. `team.cloudflareaccess.com`.             |
+| `CLOUDFLARE_ACCESS_APPLICATION_AUD` | The Access application's **Application Audience (AUD) tag**.        |
+| `PORT` / `HOST`                    | Optional bind address for the Node server.                           |
 
 In production, verification checks the signature against the team JWKS
 (`<team-domain>/cdn-cgi/access/certs`), the issuer, the audience, the expiry and
@@ -63,8 +63,8 @@ check never is.
    Vela is published on.
 2. Add a policy that allows exactly the one person who should reach the browser.
    Vela has one identity and does not model tenancy; Access is the boundary.
-3. Copy the application's **AUD tag** into `VELA_POLICY_AUD` and set
-   `VELA_TEAM_DOMAIN` to your team domain.
+3. Copy the application's **AUD tag** into `CLOUDFLARE_ACCESS_APPLICATION_AUD`
+   and set `CLOUDFLARE_ACCESS_TEAM_DOMAIN` to your team domain.
 4. Publish Vela through a Cloudflare Tunnel (or any origin behind Access) so the
    origin is never reachable directly. Access adds the `Cf-Access-Jwt-Assertion`
    header that Vela verifies.
@@ -93,8 +93,8 @@ syscalls that requires, so no extra profile is needed. Pass `--init` and
 ```sh
 podman run --rm --init --ipc=host \
   -p 127.0.0.1:3000:3000 \
-  -e VELA_TEAM_DOMAIN=https://<team>.cloudflareaccess.com \
-  -e VELA_POLICY_AUD=<application-aud> \
+  -e CLOUDFLARE_ACCESS_TEAM_DOMAIN=<team>.cloudflareaccess.com \
+  -e CLOUDFLARE_ACCESS_APPLICATION_AUD=<application-aud> \
   ghcr.io/lazzybit/vela:latest
 ```
 

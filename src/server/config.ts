@@ -5,7 +5,7 @@
  * malformed, every request is refused. Vela has no second identity mechanism.
  */
 export interface AccessConfig {
-  /** Access team origin, for example `https://team.cloudflareaccess.com`. */
+  /** Access team origin, derived from the team domain `team.cloudflareaccess.com`. */
   readonly teamDomain: string;
   /** Application Audience (AUD) tag of the Vela Access application. */
   readonly policyAud: string;
@@ -29,29 +29,33 @@ export class ConfigError extends Error {
   }
 }
 
+/**
+ * The variable holds the bare team domain, `<team>.cloudflareaccess.com`, and
+ * nothing else; the https origin used for the issuer is derived from it.
+ */
 function readTeamDomain(raw: string | undefined): string | null {
   const value = raw?.trim();
   if (!value) return null;
   let url: URL;
   try {
-    url = new URL(value);
+    url = new URL(`https://${value}`);
   } catch {
     return null;
   }
-  if (url.protocol !== "https:") return null;
+  if (url.hostname !== value.toLowerCase()) return null;
   if (url.pathname !== "/" || url.search !== "" || url.hash !== "") return null;
   return url.origin;
 }
 
 export function loadAccessConfig(env: NodeJS.ProcessEnv = process.env): AccessConfig {
   const problems: string[] = [];
-  const teamDomain = readTeamDomain(env.VELA_TEAM_DOMAIN);
+  const teamDomain = readTeamDomain(env.CLOUDFLARE_ACCESS_TEAM_DOMAIN);
   if (!teamDomain) {
-    problems.push("VELA_TEAM_DOMAIN must be an https origin such as https://<team>.cloudflareaccess.com");
+    problems.push("CLOUDFLARE_ACCESS_TEAM_DOMAIN must be the team domain such as <team>.cloudflareaccess.com");
   }
-  const policyAud = env.VELA_POLICY_AUD?.trim();
+  const policyAud = env.CLOUDFLARE_ACCESS_APPLICATION_AUD?.trim();
   if (!policyAud) {
-    problems.push("VELA_POLICY_AUD must be the Access application's AUD tag");
+    problems.push("CLOUDFLARE_ACCESS_APPLICATION_AUD must be the Access application's AUD tag");
   }
   if (!teamDomain || !policyAud) {
     throw new ConfigError(`Vela is not configured and will not serve requests: ${problems.join("; ")}.`);

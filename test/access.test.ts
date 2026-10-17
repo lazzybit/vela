@@ -90,7 +90,7 @@ describe("verifyAccessAssertion", () => {
 });
 
 describe("authenticateRequest", () => {
-  const env = { VELA_TEAM_DOMAIN: config.teamDomain, VELA_POLICY_AUD: config.policyAud };
+  const env = { CLOUDFLARE_ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com", CLOUDFLARE_ACCESS_APPLICATION_AUD: config.policyAud };
 
   it("refuses a request without the Access header", async () => {
     await expect(authenticateRequest(new Request("https://vela.example/mcp"), env)).rejects.toMatchObject({
@@ -132,18 +132,24 @@ describe("development bypass", () => {
 
 describe("loadAccessConfig", () => {
   it("reports exactly what is missing", () => {
-    expect(() => loadAccessConfig({})).toThrow(/VELA_TEAM_DOMAIN.*VELA_POLICY_AUD/);
+    expect(() => loadAccessConfig({})).toThrow(/CLOUDFLARE_ACCESS_TEAM_DOMAIN.*CLOUDFLARE_ACCESS_APPLICATION_AUD/);
   });
 
-  it("rejects a non-https team domain", () => {
+  it("rejects a value that is not a bare team domain", () => {
     expect(() =>
-      loadAccessConfig({ VELA_TEAM_DOMAIN: "http://team.cloudflareaccess.com", VELA_POLICY_AUD: "aud" }),
+      loadAccessConfig({
+        CLOUDFLARE_ACCESS_TEAM_DOMAIN: "https://team.cloudflareaccess.com",
+        CLOUDFLARE_ACCESS_APPLICATION_AUD: "aud",
+      }),
     ).toThrow(ConfigError);
   });
 
-  it("normalizes the team origin", () => {
+  it("derives the team origin from the bare team domain", () => {
     expect(
-      loadAccessConfig({ VELA_TEAM_DOMAIN: "https://team.cloudflareaccess.com", VELA_POLICY_AUD: "aud" }),
+      loadAccessConfig({
+        CLOUDFLARE_ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com",
+        CLOUDFLARE_ACCESS_APPLICATION_AUD: "aud",
+      }),
     ).toEqual({ teamDomain: "https://team.cloudflareaccess.com", policyAud: "aud" });
   });
 
