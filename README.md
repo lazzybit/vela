@@ -163,6 +163,9 @@ that session's page at `/sessions/{id}`.
 - A page can run one screencast. If an MCP client is recording video from the
   active page, the live view reports that it is unavailable rather than taking
   over the recording.
+- Every session presents the same desktop: a US locale and timezone, a pinned
+  viewport and screen, and a fixed user agent. The profile and its init script
+  are [`docs/playwright-fingerprint.md`](docs/playwright-fingerprint.md).
 - `SIGINT`/`SIGTERM` close MCP transports and the browser.
 
 ## Commands

@@ -115,6 +115,24 @@ describe("session registry", () => {
     expect(ids.size).toBe(25);
   });
 
+  it("opens every session with the same page profile", async () => {
+    await registry.open();
+    await registry.open();
+    const [first, second] = fake.contexts;
+    expect(first?.options).toMatchObject({
+      viewport: { width: 1800, height: 900 },
+      screen: { width: 1920, height: 1080 },
+      deviceScaleFactor: 1,
+      locale: "en-US",
+      timezoneId: "America/Los_Angeles",
+      colorScheme: "light",
+      reducedMotion: "no-preference",
+    });
+    expect(second?.options).toEqual(first?.options);
+    expect(first?.initScripts).toHaveLength(1);
+    expect(first?.initScripts[0]?.arg).toMatchObject({ hardwareConcurrency: 8, deviceMemory: 8 });
+  });
+
   it("survives a browser disconnect by launching again", async () => {
     await registry.open();
     fake.closed = true;

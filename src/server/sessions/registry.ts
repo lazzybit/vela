@@ -1,7 +1,8 @@
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { accessSync, constants } from "node:fs";
 import { delimiter, join } from "node:path";
-import type { Browser, BrowserContext, Page } from "playwright";
+import type { Browser, BrowserContext, BrowserContextOptions, Page } from "playwright";
 import { onShutdown } from "../lifecycle";
 
 /**
@@ -50,6 +51,211 @@ export class SessionClosedError extends Error {
 export type BrowserFactory = () => Promise<Browser>;
 
 /**
+ * The page profile. Every session presents the same desktop, so what a page can
+ * read does not vary between sessions or between restarts.
+ */
+const PROFILE = {
+  viewport: { width: 1800, height: 900 },
+  screen: { width: 1920, height: 1080 },
+  // A window that fits the screen and carries browser chrome above the page.
+  window: { width: 1808, height: 985, x: 60, y: 40 },
+  hardwareConcurrency: 8,
+  deviceMemory: 8,
+  connection: { effectiveType: "4g", rtt: 50, downlink: 10 },
+  webgl: {
+    vendor: "Google Inc. (Intel)",
+    renderer: "ANGLE (Intel, Mesa Intel(R) UHD Graphics 620 (KBL GT2), OpenGL 4.6 (Core Profile) Mesa 23.2.1)",
+  },
+};
+
+const CONTEXT_OPTIONS: BrowserContextOptions = {
+  viewport: PROFILE.viewport,
+  screen: PROFILE.screen,
+  deviceScaleFactor: 1,
+  locale: "en-US",
+  timezoneId: "America/Los_Angeles",
+  colorScheme: "light",
+  reducedMotion: "no-preference",
+};
+
+type PageProfile = typeof PROFILE;
+
+/**
+ * Runs before any page script, in every frame. It changes only what a page can
+ * observe; it changes nothing about what the browser can do.
+ */
+function applyProfile(profile: PageProfile): void {
+  try {
+    const patched = new WeakSet<Function>();
+
+    const disguise = (replacement: Function, original: Function): Function => {
+      patched.add(replacement);
+      Object.defineProperty(replacement, "name", { value: original.name, configurable: true });
+      Object.defineProperty(replacement, "length", { value: original.length, configurable: true });
+      return replacement;
+    };
+
+    const nativeToString = Function.prototype.toString;
+    const toStringProxy = new Proxy(nativeToString, {
+      apply(target, thisArg, args) {
+        if (typeof thisArg === "function" && patched.has(thisArg)) {
+          return `function ${thisArg.name}() { [native code] }`;
+        }
+        // A proxy has an empty name, so answer for itself through its target.
+        return Reflect.apply(target, thisArg === toStringProxy ? target : thisArg, args);
+      },
+    });
+    Function.prototype.toString = toStringProxy;
+
+    const owner = (object: object, property: string): [object, PropertyDescriptor] | null => {
+      let current: object | null = object;
+      while (current) {
+        const descriptor = Object.getOwnPropertyDescriptor(current, property);
+        if (descriptor) return [current, descriptor];
+        current = Object.getPrototypeOf(current);
+      }
+      return null;
+    };
+
+    /** Replaces a readable property, leaving the rest of its shape untouched. */
+    const defineValue = (object: object, property: string, value: unknown): void => {
+      if ((object as Record<string, unknown>)[property] === value) return;
+      const found = owner(object, property);
+      if (!found) return;
+      const [holder, descriptor] = found;
+      if (descriptor.get) {
+        Object.defineProperty(holder, property, {
+          get: disguise(function () {
+            return value;
+          }, descriptor.get) as () => unknown,
+          set: descriptor.set,
+          enumerable: descriptor.enumerable,
+          configurable: descriptor.configurable,
+        });
+        return;
+      }
+      Object.defineProperty(holder, property, { ...descriptor, value });
+    };
+
+    const defineFunction = (object: object, property: string, replace: (original: Function) => Function): void => {
+      const found = owner(object, property);
+      if (!found || typeof found[1].value !== "function") return;
+      const [holder, descriptor] = found;
+      const original = descriptor.value as Function;
+      Object.defineProperty(holder, property, { ...descriptor, value: disguise(replace(original), original) });
+    };
+
+    defineValue(navigator, "webdriver", false);
+    defineValue(navigator, "hardwareConcurrency", profile.hardwareConcurrency);
+    defineValue(navigator, "deviceMemory", profile.deviceMemory);
+
+    const connection = (navigator as unknown as { connection?: object }).connection;
+    if (connection) {
+      for (const property of ["effectiveType", "rtt", "downlink"] as const) {
+        defineValue(connection, property, profile.connection[property]);
+      }
+    }
+
+    defineValue(window, "outerWidth", profile.window.width);
+    defineValue(window, "outerHeight", profile.window.height);
+    defineValue(window, "screenX", profile.window.x);
+    defineValue(window, "screenY", profile.window.y);
+
+    defineFunction(document, "hasFocus", () => function () {
+      return true;
+    });
+
+    for (const constructor of [window.WebGLRenderingContext, window.WebGL2RenderingContext]) {
+      if (!constructor) continue;
+      defineFunction(constructor.prototype, "getParameter", original =>
+        function (this: WebGLRenderingContext, parameter: number) {
+          if (parameter === 0x9245 || parameter === 0x9246) {
+            if (this.getExtension("WEBGL_debug_renderer_info")) {
+              return parameter === 0x9245 ? profile.webgl.vendor : profile.webgl.renderer;
+            }
+          }
+          return original.call(this, parameter);
+        },
+      );
+    }
+
+    const navigatorWithPlugins = navigator as unknown as { plugins: { length: number }; mimeTypes: { length: number } };
+    if (navigatorWithPlugins.plugins.length === 0) {
+      const entry = (prototype: object, values: Record<string, unknown>): Record<string, unknown> => {
+        const instance: Record<string, unknown> = Object.create(prototype);
+        for (const [key, value] of Object.entries(values)) {
+          Object.defineProperty(instance, key, { value, enumerable: true });
+        }
+        return instance;
+      };
+      const collection = (prototype: object, entries: Array<Record<string, unknown>>): Record<string, unknown> => {
+        const instance = entry(prototype, { length: entries.length });
+        entries.forEach((item, index) => Object.defineProperty(instance, index, { value: item, enumerable: true }));
+        instance.item = disguise(function (index: number) {
+          return entries[index] ?? null;
+        }, function item(index: number) {});
+        instance.namedItem = disguise(function (name: string) {
+          return entries.find(candidate => candidate.name === name) ?? null;
+        }, function namedItem(name: string) {});
+        return instance;
+      };
+
+      const pdfMimeTypes = [
+        entry(MimeType.prototype, {
+          type: "application/pdf",
+          suffixes: "pdf",
+          description: "Portable Document Format",
+        }),
+        entry(MimeType.prototype, { type: "text/pdf", suffixes: "pdf", description: "Portable Document Format" }),
+      ];
+      const mimeTypes = collection(MimeTypeArray.prototype, pdfMimeTypes);
+      const plugin = entry(Plugin.prototype, {
+        name: "PDF Viewer",
+        filename: "internal-pdf-viewer",
+        description: "Portable Document Format",
+        length: pdfMimeTypes.length,
+        mimeTypes,
+      });
+      for (const mimeType of pdfMimeTypes) mimeType.enabledPlugin = plugin;
+
+      defineValue(navigator, "mimeTypes", mimeTypes);
+      defineValue(navigator, "plugins", collection(PluginArray.prototype, [plugin]));
+    }
+  } catch {
+    // A page Vela does not own must never fail to load because of this script.
+  }
+}
+
+/**
+ * Chromium applies `--user-agent` itself, so the client hints it sends stay its
+ * own; Playwright's `userAgent` option would send metadata without any brands.
+ * The string is the one this binary sends when it is not headless.
+ */
+function userAgentArgs(executablePath: string): string[] {
+  const version = chromiumVersion(executablePath);
+  if (!version) return [];
+  return [
+    `--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version} Safari/537.36`,
+  ];
+}
+
+const chromiumVersions = new Map<string, string | null>();
+
+function chromiumVersion(executablePath: string): string | null {
+  const known = chromiumVersions.get(executablePath);
+  if (known !== undefined) return known;
+  let version: string | null = null;
+  try {
+    const printed = execFileSync(executablePath, ["--version"], { encoding: "utf8", timeout: 10_000 });
+    version = /\b\d+\.\d+\.\d+\.\d+\b/.exec(printed)?.[0] ?? null;
+  } catch {
+    console.error(`vela: could not read the version of ${executablePath}; the browser keeps its own user agent.`);
+  }
+  chromiumVersions.set(executablePath, version);
+  return version;
+}
+
+/**
  * Locate the Chromium installed by the operating system. Its package can ship
  * the setuid sandbox helper that Playwright's downloaded browser lacks, so the
  * browser keeps its sandbox where user namespaces are unavailable.
@@ -80,10 +286,16 @@ async function launchChromium(): Promise<Browser> {
   // example a unit test with an injected factory) never loads Playwright.
   const { chromium } = await import("playwright");
   const runningAsRoot = typeof process.getuid === "function" && process.getuid() === 0;
+  const executablePath = findSystemChromium();
   return chromium.launch({
     headless: true,
     chromiumSandbox: !runningAsRoot,
-    executablePath: findSystemChromium(),
+    executablePath,
+    args: [
+      "--disable-blink-features=AutomationControlled",
+      "--enable-unsafe-swiftshader",
+      ...userAgentArgs(executablePath),
+    ],
   });
 }
 
@@ -157,7 +369,8 @@ export function createSessionRegistry(launch: BrowserFactory = launchChromium): 
 
   async function open(name?: string): Promise<SessionInfo> {
     const instance = await browserInstance();
-    const context = await instance.newContext();
+    const context = await instance.newContext(CONTEXT_OPTIONS);
+    await context.addInitScript(applyProfile, PROFILE);
     await context.newPage();
     const id = newId();
     const session: VelaSession = {

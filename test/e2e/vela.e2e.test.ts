@@ -193,6 +193,16 @@ async function textOf(client: Client, name: string, args: Record<string, unknown
   return (result.content ?? []).map(block => block.text ?? "").join("\n");
 }
 
+/** The `### Result` section of a tool result, without the sections printed after it. */
+function resultSection(text: string): string {
+  const marker = "### Result\n";
+  const start = text.indexOf(marker);
+  if (start === -1) return "";
+  const rest = text.slice(start + marker.length);
+  const end = rest.search(/^### /m);
+  return (end === -1 ? rest : rest.slice(0, end)).trim().replace(/^```(?:json)?\n|\n```$/g, "");
+}
+
 function refOf(snapshot: string, pattern: RegExp): string {
   const match = pattern.exec(snapshot);
   if (!match) throw new Error(`no ref matching ${pattern} in:\n${snapshot}`);
@@ -342,6 +352,78 @@ describe("Vela end to end", () => {
     const image = screenshot.content?.find(block => block.type === "image");
     expect(image).toMatchObject({ mimeType: "image/png" });
     expect((image?.data ?? "").length).toBeGreaterThan(100);
+
+    await client.close();
+  });
+
+  it("reports the pinned page profile from a session's page", async () => {
+    const { client } = await connectMcp(`/mcp/${sessionA}`);
+    await textOf(client, "browser_navigate", { url: fixtureUrl("/") });
+
+    const evaluation = await textOf(client, "browser_evaluate", {
+      function: `() => {
+        const canvas = document.createElement("canvas");
+        const gl = canvas.getContext("webgl");
+        if (gl) gl.getExtension("WEBGL_debug_renderer_info");
+        const descriptor = Object.getOwnPropertyDescriptor(Navigator.prototype, "webdriver");
+        return {
+          userAgent: navigator.userAgent,
+          webdriver: navigator.webdriver,
+          brands: navigator.userAgentData ? navigator.userAgentData.brands.map(brand => brand.brand) : null,
+          language: navigator.language,
+          languages: navigator.languages,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          viewport: [innerWidth, innerHeight],
+          outer: [outerWidth, outerHeight],
+          screen: [screen.width, screen.height],
+          position: [screenX, screenY],
+          plugins: navigator.plugins.length,
+          hasFocus: document.hasFocus(),
+          webglVendor: gl ? gl.getParameter(0x9245) : null,
+          webglRenderer: gl ? gl.getParameter(0x9246) : null,
+          webdriverGetter: descriptor ? descriptor.get.toString() : null,
+          webdriverEnumerable: descriptor ? descriptor.enumerable : null,
+        };
+      }`,
+    });
+
+    const result = resultSection(evaluation);
+    const profile = JSON.parse(result) as {
+      userAgent: string;
+      webdriver: boolean;
+      brands: string[] | null;
+      language: string;
+      languages: string[];
+      timeZone: string;
+      viewport: [number, number];
+      outer: [number, number];
+      screen: [number, number];
+      position: [number, number];
+      plugins: number;
+      hasFocus: boolean;
+      webglVendor: string | null;
+      webglRenderer: string | null;
+      webdriverGetter: string | null;
+      webdriverEnumerable: boolean | null;
+    };
+
+    expect(profile.userAgent).toMatch(/^Mozilla\/5\.0 \(X11; Linux x86_64\).*Chrome\/\d+\.\d+\.\d+\.\d+ Safari\/537\.36$/);
+    expect(profile.userAgent).not.toContain("Headless");
+    expect(profile.webdriver).toBe(false);
+    expect(profile.brands?.length).toBeGreaterThan(0);
+    expect(profile.language).toBe("en-US");
+    expect(profile.languages[0]).toBe("en-US");
+    expect(profile.timeZone).toBe("America/Los_Angeles");
+    expect(profile.viewport).toEqual([1800, 900]);
+    expect(profile.outer).toEqual([1808, 985]);
+    expect(profile.screen).toEqual([1920, 1080]);
+    expect(profile.position).toEqual([60, 40]);
+    expect(profile.plugins).toBeGreaterThan(0);
+    expect(profile.hasFocus).toBe(true);
+    expect(profile.webglVendor).toBe("Google Inc. (Intel)");
+    expect(profile.webglRenderer).toContain("ANGLE (Intel,");
+    expect(profile.webdriverGetter).toBe("function get webdriver() { [native code] }");
+    expect(profile.webdriverEnumerable).toBe(true);
 
     await client.close();
   });

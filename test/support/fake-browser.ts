@@ -127,8 +127,16 @@ export class FakePage {
 
 export class FakeContext {
   readonly created: FakePage[] = [];
+  readonly initScripts: Array<{ script: unknown; arg: unknown }> = [];
   closed = false;
   private readonly listeners = new Map<string, Set<() => void>>();
+
+  constructor(readonly options?: Record<string, unknown>) {}
+
+  async addInitScript(script: unknown, arg?: unknown): Promise<unknown> {
+    this.initScripts.push({ script, arg });
+    return { dispose: async () => {} };
+  }
 
   async newPage(): Promise<Page> {
     const page = new FakePage();
@@ -174,8 +182,8 @@ export class FakeBrowser {
     return this;
   }
 
-  async newContext(): Promise<BrowserContext> {
-    const context = new FakeContext();
+  async newContext(options?: Record<string, unknown>): Promise<BrowserContext> {
+    const context = new FakeContext(options);
     this.contexts.push(context);
     return context as unknown as BrowserContext;
   }
